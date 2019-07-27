@@ -32,6 +32,8 @@ var (
 		"BaseSpecPath":           validateInstallPackagePath,
 		"CustomPackagePath":      validateInstallPackagePath,
 		"DefaultNamespacePrefix": validateDefaultNamespacePrefix,
+		"TrafficManagement.Components.Proxy.Common.Values.includeIPRanges": validateIPRanges,
+		"TrafficManagement.Components.Proxy.Common.Values.excludeIpRanges": validateIPRanges,
 	}
 
 	// requiredValues lists all the values that must be non-empty.
@@ -141,6 +143,30 @@ func validateTag(path util.Path, val interface{}) util.Errors {
 
 func validateDefaultNamespacePrefix(path util.Path, val interface{}) util.Errors {
 	return validateWithRegex(path, val, ObjectNameRegexp)
+}
+
+func validateIPRanges(path util.Path, val interface{}) util.Errors {
+	reflectVal := val
+	switch f := val.(type) {
+	case reflect.Value:
+		// Handle extractable values with special methods
+		// since validate() does not handle them.
+		if f.IsValid() && f.CanInterface() {
+			reflectVal = f.Interface()
+		}
+	}
+
+	if reflectVal == nil {
+		return nil
+	}
+
+	// Allow "*" and empty string as IP ranges
+	if reflect.TypeOf(reflectVal).Kind() == reflect.String {
+		if reflectVal.(string) == "*" || reflectVal.(string) == "" {
+			return nil
+		}
+	}
+	return validateStringList(validateCIDR)(path, reflectVal)
 }
 
 func validateInstallPackagePath(path util.Path, val interface{}) util.Errors {
