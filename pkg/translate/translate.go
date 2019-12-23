@@ -114,25 +114,15 @@ func NewTranslator(minorVersion version.MinorVersion) (*Translator, error) {
 	return newTranslator(minorVersion, maxFallbackNum)
 }
 
-func newTranslator(minorVersion version.MinorVersion, fallbackNum uint) (*Translator, error) {
-	v := fmt.Sprintf("%s.%d", minorVersion.MajorVersion, minorVersion.Minor)
-	f := "translateConfig/translateConfig-" + v + ".yaml"
-	b, err := vfs.ReadFile(f)
+func newTranslator(minorVersion version.MinorVersion, fallbackNum int) (*Translator, error) {
+	b, err := readConfigWithFallback(minorVersion, fallbackNum, readTranslateConfig)
 	if err != nil {
-		if fallbackNum > 0 && minorVersion.Minor > 0 {
-			major := minorVersion.Major
-			minor := minorVersion.Minor - 1
-			previous := version.NewMinorVersion(major, minor)
-			log.Warnf("could not read translateConfig file for version %s, fallback to version %s",
-				minorVersion, previous)
-			return newTranslator(previous, fallbackNum-1)
-		}
-		return nil, fmt.Errorf("could not read translateConfig file %s: %s", f, err)
+		return nil, err
 	}
 	t := &Translator{}
 	err = yaml.Unmarshal(b, t)
 	if err != nil {
-		return nil, fmt.Errorf("could not Unmarshal translateConfig file %s: %s", f, err)
+		return nil, fmt.Errorf("could not Unmarshal translateConfig: %s", err)
 	}
 	t.featureToComponents = make(map[name.FeatureName][]name.ComponentName)
 	for c, f := range t.ToFeature {
@@ -140,6 +130,32 @@ func newTranslator(minorVersion version.MinorVersion, fallbackNum uint) (*Transl
 	}
 	t.Version = minorVersion
 	return t, nil
+}
+
+func readConfigWithFallback(mv version.MinorVersion, fallbackNum int,
+	read func(string) ([]byte, error)) (b []byte, err error) {
+	for i := 0; i < fallbackNum; i++ {
+		v := fmt.Sprintf("%s.%d", mv.MajorVersion, mv.Minor)
+		b, err = read(v)
+		if err == nil {
+			return b, err
+		}
+		if fallbackNum > 0 && mv.Minor > 0 {
+			mv = version.NewMinorVersion(mv.Major, mv.Minor-1)
+			continue
+		}
+		return nil, err
+	}
+	return b, err
+}
+
+func readTranslateConfig(v string) ([]byte, error) {
+	f := "translateConfig/translateConfig-" + v + ".yaml"
+	if b, err := vfs.ReadFile(f); err != nil {
+		return nil, fmt.Errorf("could not read translateConfig file %s: %s", f, err)
+	} else {
+		return b, nil
+	}
 }
 
 // OverlayK8sSettings overlays k8s settings from icp over the manifest objects, based on t's translation mappings.
